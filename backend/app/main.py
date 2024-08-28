@@ -1,11 +1,14 @@
-from fastapi import FastAPI, BackgroundTasks, Request, APIRouter
+from fastapi import FastAPI, BackgroundTasks, Request, APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Dict
+from typing import Dict, List
 import os
 import uuid
 import wave
 import logging
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -19,6 +22,33 @@ app = FastAPI(
 
 # APIRouterのインスタンスを作成
 api_router = APIRouter()
+
+# データベース接続設定
+SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:password@mysql:3306/mydatabase"
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+# Itemモデルの定義
+class Item(Base):
+    __tablename__ = "items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), index=True)
+
+# Pydanticモデル
+class ItemBase(BaseModel):
+    id: int
+    name: str
+
+# データベースセッションを取得する関数
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 class SensorData(BaseModel):
     device_id: str
@@ -94,6 +124,18 @@ async def receive_audio(request: Request):
             status_code=500,
             content={"status": "error", "message": str(e)}
         )
+
+@api_router.get("/items", response_model=List[ItemBase])
+def read_items(db: Session = Depends(get_db)):
+    items = db.query(Item).all()
+    return items
+
+@api_router.get("/items/{item_id}", response_model=ItemBase)
+def read_item(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(Item).filter(Item.id == item_id).first()
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
 
 @api_router.get("/")
 def read_root():
