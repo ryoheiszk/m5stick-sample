@@ -2,3 +2,6 @@ fastapi
 uvicorn
 python-multipart
 asyncio
+sqlalchemy
+pymysql
+cryptography

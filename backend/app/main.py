@@ -1,17 +1,24 @@
-from fastapi import FastAPI, BackgroundTasks, UploadFile, File, Request
+from fastapi import FastAPI, BackgroundTasks, Request, APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict
 import os
 import uuid
 import wave
-import asyncio
-
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
 
-app = FastAPI()
+app = FastAPI(
+    title="Your API",
+    description="API description",
+    version="1.0.0",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json"
+)
+
+# APIRouterのインスタンスを作成
+api_router = APIRouter()
 
 class SensorData(BaseModel):
     device_id: str
@@ -40,51 +47,10 @@ def print_sensor_data(data: SensorData):
     print(f"Wi-Fi強度: {data.wifi_rssi} dBm")
     print("--------------------")
 
-@app.post("/sensor_data")
+@api_router.post("/sensor_data")
 async def receive_sensor_data(data: SensorData, background_tasks: BackgroundTasks):
     background_tasks.add_task(print_sensor_data, data)
     return {"status": "success", "message": "Sensor data received and processed"}
-
-async def save_and_convert_audio_file(file: UploadFile):
-    os.makedirs("audio_files", exist_ok=True)
-    raw_file_name = f"audio_{uuid.uuid4()}.raw"
-    wav_file_name = f"audio_{uuid.uuid4()}.wav"
-    raw_file_path = os.path.join("audio_files", raw_file_name)
-    wav_file_path = os.path.join("audio_files", wav_file_name)
-
-    print(f"Saving RAW file to: {raw_file_path}")
-
-    with open(raw_file_path, "wb") as buffer:
-        content = await file.read()
-        buffer.write(content)
-
-    print(f"RAW file saved. Size: {len(content)} bytes")
-
-    # RAWからWAVに変換
-    print(f"Converting to WAV: {wav_file_path}")
-    with open(raw_file_path, "rb") as raw_file:
-        raw_data = raw_file.read()
-
-    # WAVファイルのパラメータ設定
-    n_channels = 1
-    sample_width = 2  # 16-bit
-    frame_rate = 16000  # M5StickC Plusの設定に合わせる
-    n_frames = len(raw_data) // (n_channels * sample_width)
-
-    with wave.open(wav_file_path, "wb") as wav_file:
-        wav_file.setnchannels(n_channels)
-        wav_file.setsampwidth(sample_width)
-        wav_file.setframerate(frame_rate)
-        wav_file.setnframes(n_frames)
-        wav_file.writeframes(raw_data)
-
-    print(f"WAV file saved: {wav_file_path}")
-
-    # RAWファイルを削除（オプション）
-    os.remove(raw_file_path)
-    print(f"RAW file deleted: {raw_file_path}")
-
-    return wav_file_path
 
 def raw_to_wav(raw_file_path, wav_file_path, channels=1, sample_width=2, frame_rate=16000):
     with open(raw_file_path, 'rb') as raw_file:
@@ -96,7 +62,7 @@ def raw_to_wav(raw_file_path, wav_file_path, channels=1, sample_width=2, frame_r
         wav_file.setframerate(frame_rate)
         wav_file.writeframes(raw_data)
 
-@app.post("/recording")
+@api_router.post("/recording")
 async def receive_audio(request: Request):
     try:
         content = await request.body()
@@ -129,6 +95,13 @@ async def receive_audio(request: Request):
             content={"status": "error", "message": str(e)}
         )
 
+@api_router.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+# アプリケーションの初期化時点でルーターをインクルード
+app.include_router(api_router, prefix="/api")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=10000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

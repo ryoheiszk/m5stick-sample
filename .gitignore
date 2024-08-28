@@ -1,2 +1,5 @@
 .venv/
 audio_files/
+.env
+mysql/data
+__pycache__/
